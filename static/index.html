@@ -223,6 +223,13 @@
                                 <button class="btn btn-sm btn-outline-primary" @click="openSearchResult(result)">
                                     Open log
                                 </button>
+                                <button
+                                    class="btn btn-sm btn-outline-secondary"
+                                    :disabled="!result.job_id"
+                                    @click="openSearchScript(result)"
+                                >
+                                    Script
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -421,6 +428,35 @@
                         <pre class="log-chunk">{{ getSearchLogText() || 'No content loaded yet.' }}</pre>
                         <div :style="{height: getSearchSpacer().bottom + 'px'}"></div>
                     </div>
+                </div>
+            </div>
+            <div v-if="searchScriptState.visible" class="log-container mb-4">
+                <div class="log-toolbar">
+                    <div>
+                        <strong>Historical Script</strong>
+                        <small class="d-block text-muted" v-if="searchScriptState.jobId">Job {{ searchScriptState.jobId }}</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                        <div v-if="searchScriptState.loading" class="text-warning">
+                            <span class="spinner-border spinner-border-sm"></span>
+                            <span class="ms-2">Loading script…</span>
+                        </div>
+                        <small v-else-if="searchScriptState.lastFetched" class="text-muted">
+                            Fetched: {{ searchScriptState.lastFetched }}
+                        </small>
+                        <button class="btn btn-sm btn-outline-light" @click="closeSearchScript">
+                            Close
+                        </button>
+                        <button class="btn btn-sm btn-outline-light" :disabled="searchScriptState.loading" @click="refreshSearchScript">
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                <div v-if="searchScriptState.error" class="alert alert-warning py-2">
+                    {{ searchScriptState.error }}
+                </div>
+                <div class="log-output-wrapper">
+                    <pre class="log-output">{{ searchScriptState.content || 'Script not available.' }}</pre>
                 </div>
             </div>
 
@@ -765,6 +801,14 @@
                         shownBytes: null,
                         jobId: null,
                         jobComment: ''
+                    },
+                    searchScriptState: {
+                        visible: false,
+                        loading: false,
+                        error: null,
+                        content: '',
+                        jobId: null,
+                        lastFetched: null
                     },
                     outputDir: '',
                     searchDebounce: null,
@@ -1696,6 +1740,64 @@
                         chunks: []
                     };
                     await this.fetchSearchLogChunk(result.relative_path, { start: null, mode: 'replace' });
+                },
+                async openSearchScript(result) {
+                    if (!result || !result.job_id) {
+                        alert('No job ID associated with this log result.');
+                        return;
+                    }
+                    this.searchScriptState = {
+                        ...this.searchScriptState,
+                        visible: true,
+                        loading: true,
+                        error: null,
+                        content: '',
+                        jobId: result.job_id
+                    };
+                    await this.fetchSearchScript(result.job_id);
+                },
+                async fetchSearchScript(jobId) {
+                    if (!jobId) return;
+                    this.searchScriptState = {
+                        ...this.searchScriptState,
+                        loading: true,
+                        error: null
+                    };
+                    try {
+                        const response = await fetch(`/api/jobs/${jobId}/script`);
+                        const data = await response.json();
+                        if (!response.ok || !data.success) {
+                            throw new Error(data.script || data.message || 'Unable to load script');
+                        }
+                        this.searchScriptState = {
+                            ...this.searchScriptState,
+                            content: data.script || '',
+                            loading: false,
+                            error: null,
+                            lastFetched: new Date().toLocaleTimeString()
+                        };
+                    } catch (error) {
+                        this.searchScriptState = {
+                            ...this.searchScriptState,
+                            loading: false,
+                            error: error.message || 'Unable to load script'
+                        };
+                    }
+                },
+                refreshSearchScript() {
+                    if (this.searchScriptState && this.searchScriptState.jobId) {
+                        this.fetchSearchScript(this.searchScriptState.jobId);
+                    }
+                },
+                closeSearchScript() {
+                    this.searchScriptState = {
+                        visible: false,
+                        loading: false,
+                        error: null,
+                        content: '',
+                        jobId: null,
+                        lastFetched: null
+                    };
                 },
                 closeSearchLog() {
                     this.searchLogState = {
